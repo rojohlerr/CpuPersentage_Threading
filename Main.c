@@ -10,7 +10,7 @@
 
 FILE* FlPtr;
 pthread_mutex_t Lock_Collection;
-pthread_cond_t Cond_Collection,Cond_Collection2;
+pthread_cond_t Cond_Collection;
 double buffer;
 int user[2], nices[2] ,systems[2], idel[2], iowait[2], irq[2] ,softirq[2],  steal[2];
 int Idel[2],NonIdle[2], Total[2];
@@ -83,15 +83,15 @@ void* PrinterFun(void* passvalue) // the print thread
   sleep(2);
 pthread_mutex_lock(&Lock_Collection); 
     
- pthread_cond_signal(&Cond_Collection2); 
+ pthread_cond_signal(&Cond_Collection); 
   int i =0;
   while(i <= Colp->Total_Cores[0])
   {
     if(i == 0)
-        printf("Total CPU :%f",*Colp->Core_Usage);
+        printf("Total CPU :%.3f\n",*Colp->Core_Usage*100);
     else
-        printf("CPU_Core_%d : %.3f",i,*++Colp->Core_Usage);
-
+        printf("CPU_Core_%d : %.3f\n",i,*++Colp->Core_Usage*100);
+   i++;
   }
 pthread_mutex_unlock(&Lock_Collection); 
 
@@ -133,7 +133,6 @@ void* AnalyserFun(void* arg) // the Analyser thread
     count++;
     Cols->Core_Usage+count;
     }
-    pthread_cond_wait(&Cond_Collection2, &Lock_Collection);
      pthread_mutex_unlock(&Lock_Collection); 
     
 }
@@ -152,8 +151,6 @@ void* ReaderFun(void* value) // the Read thread
     if (!FlPtr) //assert -  Program exits if the file pointer returns NULL.
         {exit(EXIT_FAILURE);}
 
-    
-
     while (!feof(FlPtr) && !ferror(FlPtr))
        
         if (fgets(Col->Contents[i][counter],MAX_LEN, FlPtr) != NULL)
@@ -164,7 +161,9 @@ void* ReaderFun(void* value) // the Read thread
             counter++;
        }
     Col->Total_Cores[i] = --counter; // all the core plus one for the total one 
-   
+    fclose(FlPtr);
+    
+    sleep(1);
     }
     
     pthread_cond_wait(&Cond_Collection, &Lock_Collection);
@@ -178,29 +177,25 @@ int main()
     pthread_t TrdRead, TrdAnalaysis,TrdPrint;
     pthread_mutex_init(&Lock_Collection,NULL);
     pthread_cond_init(&Cond_Collection,NULL);
-    pthread_cond_init(&Cond_Collection2,NULL);
+    //pthread_cond_init(&Cond_Collection2,NULL);
     if( 0 == pthread_create(&TrdRead,NULL,ReaderFun,NULL))
              
             if( 0 == pthread_create(&TrdAnalaysis,NULL,AnalyserFun,NULL))
             
                 if( 0 == pthread_create(&TrdPrint,NULL,PrinterFun,NULL))
-                {
-
-                }
-            
-        
+                {}
+              
     
     if(0 == pthread_join(TrdRead,NULL))
         
-        if(0 == pthread_join(TrdAnalaysis,NULL))
-             
+         if(0 == pthread_join(TrdAnalaysis,NULL))
             if(0 == pthread_join(TrdPrint,NULL))
             {}
              
         
     pthread_mutex_destroy(&Lock_Collection);
     pthread_cond_destroy(&Cond_Collection);
-    pthread_cond_init(&Cond_Collection2,NULL);
+    //pthread_cond_init(&Cond_Collection2,NULL);
     free(Col);
     exit(EXIT_SUCCESS);
 }
