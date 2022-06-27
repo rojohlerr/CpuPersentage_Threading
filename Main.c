@@ -9,30 +9,128 @@
 #define  MAX_LEN 300 // max character in for a line
 
 FILE* FlPtr;
+pthread_mutex_t Lock_Collection;
+pthread_cond_t Cond_Collection;
+double buffer;
+int user[2], nices[2] ,systems[2], idel[2], iowait[2], irq[2] ,softirq[2],  steal[2];
+int Idel[2],NonIdle[2], Total[2];
+
 
 typedef struct{
 
     size_t Total_Cores[2]; //number of cores existed on the system
     char Contents[2][Max_Size][MAX_LEN]; // the content of every cpu 
+    double *Core_Usage; // array of core persentage
 
 } Collection ;
 
 Collection* Col;
+
+double persentage_calculate()
+{
+    double CPU_Persentage;
+    for(int i=0;i<2;i++)
+    {
+        NonIdle[i] = user[i] + nices[i] + systems[i] + irq[i] + softirq[i] + steal[i];
+        Idel[i] = idel[i], iowait[i];
+    }
+    CPU_Persentage =(double) ((Idel[1] + NonIdle[1] -(Idel[0] + NonIdle[0])) -(Idel[1]- Idel[0]))/((Idel[1] + NonIdle[1] -(Idel[0] + NonIdle[0])));
+    return CPU_Persentage;
+}
+void Assignvalues(int seq, int index, int value)
+{
+    switch(index)
+    {
+        
+        case 1:
+            user[seq] = value;
+            break;
+        
+        case 2:
+            nices[seq] = value;
+            break;
+
+        case 3:
+            systems[seq] = value;
+            break;
+        case 4:
+            idel[seq] = value;
+            break;
+        case 5:
+            iowait[seq] = value;
+            break;
+
+        case 6:
+            irq[seq] = value;
+            break;
+
+        case 7:
+            softirq[seq] = value;
+            break;
+        
+        case 8:
+            steal[seq] = value;
+            break;
+        
+    }
+}
+void* AnalyserFun(void* arg)
+{
+    sleep(1);
+    
+    Collection* Cols;
+    char* ptr, delim[] = " ";
+    int count = 0, att = 0;
+
+    Cols = Col;
+
+  
+    pthread_mutex_lock(&Lock_Collection); 
+    
+    pthread_cond_signal(&Cond_Collection); 
+    while(count<=Cols->Total_Cores[0])
+    {
+        att = 0;
+        for(int i=0;i<2;i++)
+        {      
+              att = 0;
+              ptr =  strtok(Cols->Contents[i][count], delim);
+                //convert array pointers to string 
+            while (ptr != NULL)
+	        { 
+                
+                if(att > 0)
+	    	        Assignvalues(i, att, strtol(ptr,NULL, 16));
+		        ptr = strtok(NULL, delim);
+                att++;
+	        }                
+       }
+    buffer =persentage_calculate();
+    Cols->Core_Usage = & buffer;
+    Cols->Core_Usage++;
+    count++;
+    }
+    
+     pthread_mutex_unlock(&Lock_Collection); 
+    
+}
+
 void* ReaderFun(void* value)
 {
     
     Col =(Collection*) malloc(sizeof(Collection));
-    int counter;
    
+   pthread_mutex_lock(&Lock_Collection);  
    for(int i=0;i<2;i++)
    {
    
-    counter = 0;
+    int counter = 0;
     FlPtr  = fopen("/proc/stat","r");
-    
     if (!FlPtr) //assert -  Program exits if the file pointer returns NULL.
         {exit(EXIT_FAILURE);}
-    Col->Total_Cores[i] = 0;
+
+    
+
     while (!feof(FlPtr) && !ferror(FlPtr))
        
         if (fgets(Col->Contents[i][counter],MAX_LEN, FlPtr) != NULL)
@@ -43,27 +141,35 @@ void* ReaderFun(void* value)
             counter++;
        }
     Col->Total_Cores[i] = --counter; // all the core plus one for the total one 
-     sleep(1);
-    
-    }
-    
    
-    sleep(1);
+    }
+    pthread_cond_wait(&Cond_Collection, &Lock_Collection);
+    pthread_mutex_unlock(&Lock_Collection); 
+
 }
 
 int main()
 {
-    pthread_t TrdRead;
+    pthread_t TrdRead, TrdAnalaysis;
+    pthread_mutex_init(&Lock_Collection,NULL);
+    pthread_cond_init(&Cond_Collection,NULL);
     if( 0 == pthread_create(&TrdRead,NULL,ReaderFun,NULL))
         {
+            if( 0 == pthread_create(&TrdAnalaysis,NULL,AnalyserFun,NULL))
+            {
 
+            }
         }
     
     if(0 == pthread_join(TrdRead,NULL))
         {
+            if(0 == pthread_join(TrdAnalaysis,NULL))
+             {
 
+             }
         }
-
+    pthread_mutex_destroy(&Lock_Collection);
+    pthread_cond_destroy(&Cond_Collection);
     free(Col);
     exit(EXIT_SUCCESS);
 }
